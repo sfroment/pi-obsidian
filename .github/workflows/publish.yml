@@ -3,6 +3,12 @@ name: Publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this publish is being triggered manually"
+        required: false
+        default: "manual trigger"
 
 permissions:
   contents: read
