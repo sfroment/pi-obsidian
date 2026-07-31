@@ -1,16 +1,45 @@
 {
-  "name": "pi-obsidian-extension",
+  "name": "@sfroment/pi-obsidian",
   "version": "1.0.0",
   "description": "Pi extension for the Obsidian CLI — search, read, browse, and edit an Obsidian vault via a typed tool (direct CLI, not MCP).",
   "license": "GPL-3.0",
-  "private": true,
+  "author": "Sacha Froment <sacha.froment@mistral.ai>",
+  "homepage": "https://github.com/sfroment/pi-obsidian",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sfroment/pi-obsidian.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sfroment/pi-obsidian/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "obsidian",
+    "vault",
+    "cli"
+  ],
+  "files": [
+    "index.ts",
+    "skill/",
+    "scripts/link-pi-deps.sh",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "pi": {
     "extensions": ["./index.ts"]
   },
   "scripts": {
     "pretest": "./scripts/link-pi-deps.sh",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "prepublishOnly": "./scripts/link-pi-deps.sh && bun test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.82.0",

@@ -22,13 +22,25 @@ When the CLI is unavailable, the skill instructs the agent to fall back to `rg` 
 
 ## Install
 
-### As a Pi package
+### As a Pi package (recommended)
 
 ```bash
-pi install git:github.com:sfroment/pi-obsidian
+pi install npm:@sfroment/pi-obsidian
 ```
 
-Then `/reload` in Pi.
+Or pin a version:
+
+```bash
+pi install npm:@sfroment/pi-obsidian@1.0.0
+```
+
+Then `/reload` in Pi. The package appears in the [pi.dev gallery](https://pi.dev/packages) because it's tagged `pi-package` on npm.
+
+### From git
+
+```bash
+pi install git:github.com:sfroment/pi-obsidian@v1.0.0
+```
 
 ### Manually
 
