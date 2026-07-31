@@ -1,0 +1,18 @@
+{
+  "name": "pi-obsidian-extension",
+  "version": "1.0.0",
+  "description": "Pi extension for the Obsidian CLI — search, read, browse, and edit an Obsidian vault via a typed tool (direct CLI, not MCP).",
+  "license": "GPL-3.0",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "pretest": "./scripts/link-pi-deps.sh",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
