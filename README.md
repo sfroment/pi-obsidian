@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/sfroment/pi-obsidian/actions/workflows/ci.yml/badge.svg)](https://github.com/sfroment/pi-obsidian/actions/workflows/ci.yml)
 [![Release](https://github.com/sfroment/pi-obsidian/actions/workflows/release.yml/badge.svg)](https://github.com/sfroment/pi-obsidian/actions/workflows/release.yml)
-[![Publish](https://github.com/sfroment/pi-obsidian/actions/workflows/publish.yml/badge.svg)](https://github.com/sfroment/pi-obsidian/actions/workflows/publish.yml)
 [![npm version](https://img.shields.io/npm/v/@sfroment/pi-obsidian.svg?cacheSeconds=120)](https://www.npmjs.com/package/@sfroment/pi-obsidian)
 [![npm downloads](https://img.shields.io/npm/dm/@sfroment/pi-obsidian.svg?cacheSeconds=120)](https://www.npmjs.com/package/@sfroment/pi-obsidian)
 [![npm bundle size](https://img.shields.io/bundlephobia/min/@sfroment/pi-obsidian.svg?cacheSeconds=120)](https://bundlephobia.com/package/@sfroment/pi-obsidian)
