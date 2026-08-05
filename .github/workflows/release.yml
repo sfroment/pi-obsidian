@@ -48,10 +48,12 @@ jobs:
       - name: Compute version
         id: ver
         run: |
-          BASE_VERSION=$(node -p "require('./package.json').version")
-          TAG="v${BASE_VERSION}-dev.${{ github.run_number }}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${BASE_VERSION}-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          BASE=$(node -p "require('./package.json').version")
+          MAJOR=$(echo "${BASE}" | cut -d. -f1)
+          MINOR=$(echo "${BASE}" | cut -d. -f2)
+          VERSION="${MAJOR}.${MINOR}.${{ github.run_number }}"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Set npm version
         run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
@@ -78,4 +80,4 @@ jobs:
             --target main \
             --title "${{ steps.ver.outputs.tag }}" \
             --notes "Auto-release from commit ${{ github.sha }}" \
-            --prerelease
+            --latest
