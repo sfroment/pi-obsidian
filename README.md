@@ -108,7 +108,3 @@ Licensed under the [GNU General Public License v3.0](LICENSE).
 - **Author:** [Sacha Froment](https://sacha42.com)
 - **Source:** <https://github.com/sfroment/pi-obsidian>
 - **Issues:** <https://github.com/sfroment/pi-obsidian/issues>
-
-## Stargazers
-
-[![Stargazers over time](https://starchart.cc/sfroment/pi-obsidian.svg?variant=dark)](https://starchart.cc/sfroment/pi-obsidian)
