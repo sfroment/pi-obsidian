@@ -103,6 +103,12 @@ The `pretest` script (`scripts/link-pi-deps.sh`) symlinks the pi runtime package
 
 Licensed under the [GNU General Public License v3.0](LICENSE).
 
+## Links
+
+- **Author:** [Sacha Froment](https://sacha42.com)
+- **Source:** <https://github.com/sfroment/pi-obsidian>
+- **Issues:** <https://github.com/sfroment/pi-obsidian/issues>
+
 ## Stargazers
 
 [![Stargazers over time](https://starchart.cc/sfroment/pi-obsidian.svg?variant=dark)](https://starchart.cc/sfroment/pi-obsidian)
