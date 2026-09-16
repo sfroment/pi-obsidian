@@ -77,6 +77,26 @@ The `obsidian` tool takes:
 - `vault` — info about the active vault (`args: { info: "path" }`; info: name|path|files|folders|size).
 - `version` — Obsidian version.
 
+### Full command surface
+
+The categories above cover the common cases. The Obsidian CLI exposes many more commands — the full list (run `obsidian help` via bash for the authoritative version):
+
+- **Bases:** `base:create`, `base:query`, `base:views`, `bases` — query and manage Obsidian Bases (databases-as-files).
+- **Templates:** `templates`, `template:read`, `template:insert` — list and apply templates. `templater:create-from-template` for the Templater plugin.
+- **Bookmarks / recents:** `bookmarks`, `bookmark`, `recents` — manage bookmarks and recent files.
+- **History:** `history`, `history:list`, `history:open`, `history:read`, `history:restore` — page history.
+- **Navigation:** `open`, `tab:open`, `tabs`, `random`, `random:read`, `search:open` — open files/tabs, random note, search-and-open.
+- **Workspaces:** `workspaces`, `workspace`, `workspace:save`, `workspace:load`, `workspace:delete` — saved workspace layouts.
+- **Themes:** `themes`, `theme`, `theme:install`, `theme:set`, `theme:uninstall`.
+- **Snippets:** `snippets`, `snippet:enable`, `snippet:disable`, `snippets:enabled` — CSS snippets.
+- **Plugins:** `plugins`, `plugin`, `plugin:install`, `plugin:uninstall`, `plugin:enable`, `plugin:disable`, `plugin:reload`, `plugins:enabled`, `plugins:restrict`.
+- **Dev / debug:** `devtools`, `dev:cdp`, `dev:console`, `dev:css`, `dev:debug`, `dev:dom`, `dev:errors`, `dev:mobile`, `dev:screenshot`, `eval`, `diff`, `file` — internal/dev inspection (Chrome DevTools Protocol access).
+- **Keys / config:** `hotkey`, `hotkeys`, `command`, `commands` — hotkey and command palette inspection.
+- **Lifecycle:** `reload`, `restart` — reload the Obsidian app or a plugin.
+- **Other:** `folder` (single folder info), `history`, `open`, `tab:open`.
+
+For any command not listed, run `obsidian help` (or `obsidian <command> help`) via bash to see its flags.
+
 ## Pitfalls
 
 - **Do NOT use the MCP gateway** — there is no MCP server for obsidian. Always use the `obsidian` tool (or `bash` with `obsidian ...`).
