@@ -18,21 +18,31 @@ if [ -d "node_modules/@earendil-works/pi-coding-agent" ]; then
   exit 0
 fi
 
-# Find the pi-coding-agent install: try the active node global, then the
-# known pi runtime location on this machine.
+# Locate the pi-coding-agent install. Resolution order:
+#   1. PI_RUNTIME_DIR env var — explicit override (the directory that contains
+#      node_modules, e.g. a custom runtime root).
+#   2. The active node global (`npm root -g`).
 PI_DIR=""
-for candidate in \
-  "$(node -e "console.log(require('path').resolve(process.argv[1]))" -- "$(npm root -g 2>/dev/null)/@earendil-works/pi-coding-agent" 2>/dev/null)" \
-  "/Users/sacha.froment/.vite-plus/js_runtime/node/24.18.0/lib/node_modules/@earendil-works/pi-coding-agent"; do
-  if [ -n "$candidate" ] && [ -d "$candidate/dist" ]; then
+if [ -n "${PI_RUNTIME_DIR:-}" ]; then
+  for candidate in \
+    "$PI_RUNTIME_DIR/node_modules/@earendil-works/pi-coding-agent" \
+    "$PI_RUNTIME_DIR/@earendil-works/pi-coding-agent"; do
+    if [ -d "$candidate/dist" ]; then
+      PI_DIR="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$PI_DIR" ]; then
+  candidate="$(npm root -g 2>/dev/null)/@earendil-works/pi-coding-agent"
+  if [ -d "$candidate/dist" ]; then
     PI_DIR="$candidate"
-    break
   fi
-done
+fi
 
 if [ -z "$PI_DIR" ]; then
   echo "Could not locate @earendil-works/pi-coding-agent." >&2
-  echo "Run 'bun install' first, or install pi globally." >&2
+  echo "Run 'bun install' first, or set PI_RUNTIME_DIR to the directory containing the pi runtime's node_modules." >&2
   exit 1
 fi
 

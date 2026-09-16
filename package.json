@@ -3,7 +3,7 @@
   "version": "1.0.1",
   "description": "Pi extension for the Obsidian CLI — search, read, browse, and edit an Obsidian vault via a typed tool (direct CLI, not MCP).",
   "license": "GPL-3.0",
-  "author": "Sacha Froment <sacha.froment@mistral.ai>",
+  "author": "Sacha Froment (https://sacha42.com)",
   "homepage": "https://github.com/sfroment/pi-obsidian",
   "repository": {
     "type": "git",

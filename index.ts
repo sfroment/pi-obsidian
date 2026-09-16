@@ -25,6 +25,10 @@ const skillPath = join(baseDir, "skill", "SKILL.md");
  *  - developer/dev:* commands (not useful to the agent)
  *  - plugin/theme/snippet/workspace management (rare, UI-centric)
  *  - base:* (Bases are a newer feature; add when needed)
+ *
+ * `write` is NOT a real obsidian CLI command — it is an alias accepted by this
+ * tool and translated to `create` with the `overwrite` flag, because models
+ * habitually reach for a `write` command that does not exist.
  */
 const COMMANDS = [
 	// vault + metadata
@@ -81,6 +85,8 @@ const COMMANDS = [
 	"open",
 	"reload",
 	"restart",
+	// tool-level alias (not a CLI command): `write` → `create` + `overwrite`
+	"write",
 ] as const;
 
 type ObsidianCommand = (typeof COMMANDS)[number];
@@ -89,6 +95,15 @@ const RELEVANT_PROMPT =
 	/\b(obsidian|vault|my notes?|daily note|backlinks?|wikilinks?|frontmatter|properties|orphan notes?|deadend|unresolved links?)\b/i;
 
 const CLI_NOT_ENABLED = /command line interface is not enabled/i;
+
+/**
+ * The obsidian CLI reports some failures (e.g. reading a missing file) on
+ * stdout with exit code 0. Without sniffing, these come back as successes.
+ * The CLI prints its errors at the START of stdout, so only the first line
+ * is tested — matching anywhere would misflag legitimate note bodies that
+ * happen to contain "Error:" or "File ... not found" prose.
+ */
+const CLI_ERROR_PATTERNS = [/^Error:\s+/i, /^File\s+[^\n]*\s+not found\.?/i];
 
 /**
  * Guidance injected into the system prompt when the user's message looks
@@ -102,10 +117,10 @@ Key commands (pass as \`command\`; flags go in \`args\` as key/value):
 - Search: \`search\` (filenames) or \`search:context\` (matching lines). Always set \`args.format="json"\` and \`args.limit\`.
 - Read a note: \`read\` with \`args.file="<name>"\` (wikilink-style, alias-aware) or \`args.path="folder/note.md"\` (exact).
 - Graph: \`backlinks\`, \`links\`, \`orphans\`, \`deadends\`, \`unresolved\` — features \`rg\` cannot provide.
-- Write: \`create\`, \`append\`, \`prepend\`, \`property:set\`, \`delete\`. For writes, use the exact \`path\` from a prior search/read to avoid acting on the wrong note.
+- Write: \`create\`, \`append\`, \`prepend\`, \`property:set\`, \`delete\`. For writes, use the exact \`path\` from a prior search/read to avoid acting on the wrong note. \`write\` is accepted as an alias for \`create\` with \`overwrite\`.
 - Daily notes: \`daily:read\`, \`daily:append\`.
 
-Only \`flat\` is a registered vault (\`hermes\`, \`Lx\`, \`work\` are folders inside it). Target folders with \`args.path="hermes/..."\`. The tool defaults to the active vault when \`vault\` is omitted.`;
+Run \`vaults\` (with \`args.verbose\`) first to discover registered vault names. The tool defaults to the active vault when \`vault\` is omitted.`;
 
 export type ObsidianParams = {
 	command: ObsidianCommand;
@@ -123,8 +138,20 @@ export type ObsidianParams = {
  * Numbers are stringified.
  */
 export function buildArgv(params: ObsidianParams): string[] {
-	const argv: string[] = [params.command];
-	const args = params.args ?? {};
+	// `write` is a tool-level alias: the CLI has no write command, so it maps
+	// to `create` with `overwrite` (the CLI's canonical way to replace a note).
+	const command = params.command === "write" ? "create" : params.command;
+	const argv: string[] = [command];
+	const args: Record<string, string | number | boolean> = { ...(params.args ?? {}) };
+	if (params.command === "write") {
+		// Explicit opt-out — respect it, including wrong-typed variants (a
+		// string "false" or 0 must never fall through to forcing overwrite).
+		if (args.overwrite === false || args.overwrite === "false" || args.overwrite === 0) {
+			delete args.overwrite;
+		} else {
+			args.overwrite = true;
+		}
+	}
 	for (const [key, value] of Object.entries(args)) {
 		if (value === false || value === null || value === undefined) continue;
 		if (value === true) {
@@ -144,6 +171,10 @@ export function buildArgv(params: ObsidianParams): string[] {
  * caller sets the corresponding explicit-opt-in flag in args, which keeps the
  * LLM from nuking a note by accident. For `delete permanent` we additionally
  * surface a clear reason.
+ *
+ * `append`/`prepend` without an explicit `path`/`file` target whatever note is
+ * currently active in the Obsidian app — a silent wrong-note footgun — so the
+ * tool requires explicit targeting for them.
  */
 export function assertSafeCommand(params: ObsidianParams): void {
 	const args = params.args ?? {};
@@ -153,6 +184,24 @@ export function assertSafeCommand(params: ObsidianParams): void {
 				"Run the deletion via `bash` with explicit user confirmation, or drop the `permanent` flag " +
 				"to use the recoverable trash.",
 		);
+	}
+	if ((params.command === "append" || params.command === "prepend") && !args.path && !args.file) {
+		throw new Error(
+			`\`${params.command}\` without an explicit \`path\` or \`file\` arg appends to whatever note is currently ` +
+				"active in the Obsidian app — often the wrong note. Pass `args.path` (exact) or `args.file` " +
+			"(wikilink-style) to target the note explicitly.",
+		);
+	}
+	// Whitespace-only targets pass the truthiness check above but would serialize
+	// as an effectively-absent `path=`/`file=` — falling back to the active note.
+	if (params.command === "append" || params.command === "prepend") {
+		const target = String(args.path ?? args.file ?? "");
+		if (!target.trim()) {
+			throw new Error(
+				`\`${params.command}\` requires a non-blank \`path\` or \`file\` arg — a whitespace-only value ` +
+					"would fall back to the note currently active in the Obsidian app.",
+			);
+		}
 	}
 }
 
@@ -216,8 +265,8 @@ export async function runObsidian(
 					text:
 						"Obsidian CLI is not enabled. The Obsidian desktop app must be running with the CLI enabled " +
 						"(Settings > General > Advanced > Enable Command Line Interface), then restart Obsidian.\n\n" +
-						"Until then, you can fall back to `rg` over the vault folder " +
-						"(`~/Library/Mobile Documents/iCloud~md~obsidian/Documents/flat/`). " +
+						"Until then, you can fall back to `rg` over the vault folder on disk (the vault filesystem path " +
+						"is shown in the Obsidian app settings, or via the `vault` command with `info: \"path\"` once the CLI is back). " +
 						"That gives text search + read, but not graph features (backlinks, links, orphans).",
 				},
 			],
@@ -225,6 +274,12 @@ export async function runObsidian(
 			isError: true,
 		};
 	}
+
+	// Some CLI failures print "Error: ..." (e.g. "File ... not found.") on stdout
+	// while still exiting 0. Sniff the FIRST LINE ONLY so they are not reported
+	// as success — while note bodies that merely mention errors stay successes.
+	const firstLine = stdout.split("\n", 1)[0] ?? "";
+	const cliErrorMatch = CLI_ERROR_PATTERNS.some((re) => re.test(firstLine));
 
 	const output = formatOutput(stdout, stderr);
 	const truncation = truncateTail(output, {
@@ -246,8 +301,9 @@ export async function runObsidian(
 			code,
 			killed: result.killed,
 			truncated: truncation.truncated,
+			cliErrorDetected: cliErrorMatch || undefined,
 		},
-		isError: code !== 0,
+		isError: code !== 0 || cliErrorMatch,
 	};
 }
 
@@ -272,7 +328,7 @@ export default function obsidianExtension(pi: ExtensionAPI) {
 			"Call the local Obsidian CLI to search, read, browse, and edit an Obsidian vault. " +
 			"This is a direct command-line tool (NOT an MCP server). The Obsidian desktop app must be running with the CLI enabled. " +
 			"Pass the CLI command as `command` and its key=value flags as `args`. " +
-			"Examples: search notes (`command: 'search'`, `args: {query: 'mistral', format: 'json', limit: 10}`), " +
+			"Examples: search notes (`command: 'search'`, `args: {query: 'design', format: 'json', limit: 10}`), " +
 			"read a note (`command: 'read'`, `args: {file: 'My Note'}`), " +
 			"list backlinks (`command: 'backlinks'`, `args: {file: 'My Note', counts: true, format: 'json'}`).",
 		promptSnippet:
@@ -286,18 +342,18 @@ export default function obsidianExtension(pi: ExtensionAPI) {
 		parameters: Type.Object({
 			command: StringEnum(COMMANDS, {
 				description:
-					"Obsidian CLI command to run. Common: search, search:context, read, files, folders, outline, tags, properties, property:read, property:set, backlinks, links, orphans, deadends, unresolved, create, append, prepend, move, rename, delete, daily:read, daily:append, tasks, vaults, vault. Run `obsidian help <command>` via bash for full flag reference.",
+					"Obsidian CLI command to run. Common: search, search:context, read, files, folders, outline, tags, properties, property:read, property:set, backlinks, links, orphans, deadends, unresolved, create, append, prepend, move, rename, delete, daily:read, daily:append, tasks, vaults, vault. `write` is an alias for `create` with `overwrite: true` (pass `overwrite: false` to opt out). Run `obsidian help <command>` via bash for full flag reference.",
 			}),
 			args: Type.Optional(
 				Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()]), {
 					description:
-						"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'mistral', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values.",
+						"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'design', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values.",
 				}),
 			),
 			vault: Type.Optional(
 				Type.String({
 					description:
-						"Target vault by name. Defaults to the active/last-opened vault. Currently only `flat` is registered.",
+						"Target vault by name. Defaults to the active/last-opened vault. Run `vaults` with `args.verbose` to list registered vaults.",
 				}),
 			),
 			timeoutSeconds: Type.Optional(

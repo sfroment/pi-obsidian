@@ -9,7 +9,7 @@ compatibility: Requires the `obsidian` CLI (https://help.obsidian.md/Extending+O
 
 Use whenever the user asks about anything in their Obsidian vault — finding a note, searching content, reading a note, listing tags/backlinks/properties, or creating/editing notes. Triggers: "search my vault/notes", "find the note about X", "what's in my Obsidian", "read the note", "add to my daily note", "create a note", "show backlinks to", "list my tags".
 
-**IMPORTANT**: The `obsidian` tool calls the local Obsidian CLI directly (installed at `/opt/homebrew/bin/obsidian`). It is **not** an MCP server — do not use the `mcp` gateway. The Obsidian desktop app must be running with the CLI enabled (Settings > General > Advanced > Enable Command Line Interface).
+**IMPORTANT**: The `obsidian` tool calls the local `obsidian` CLI directly (it must be on your `PATH`). It is **not** an MCP server — do not use the `mcp` gateway. The Obsidian desktop app must be running with the CLI enabled (Settings > General > Advanced > Enable Command Line Interface).
 
 ## Tool reference
 
@@ -17,24 +17,24 @@ The `obsidian` tool takes:
 
 - `command` (required, enum) — the CLI subcommand to run.
 - `args` (optional object) — key/value flags. Booleans become bare flags (`{counts: true}` → `counts`). Strings/numbers become `key=value` tokens. Use `\n` for newlines and `\t` for tabs inside `content` values.
-- `vault` (optional) — target vault by name. Defaults to the active vault. Only `flat` is registered.
+- `vault` (optional) — target vault by name. Defaults to the active vault. Run `vaults` (with `args.verbose`) first to discover registered vault names.
 - `timeoutSeconds` (optional, default 30, max 120).
 
 ### Search
 
 - `search` — filename matches. **Always pass `format: "json"` and `limit`.**
-  - `args: { query: "mistral", format: "json", limit: 10, path: "hermes/research" }`
+  - `args: { query: "design", format: "json", limit: 10, path: "projects/research" }`
   - `case: true` for case-sensitive; `total: true` for just a count.
 - `search:context` — matching lines with surrounding context. Use this to see **why** a note matched.
-  - `args: { query: "mistral", format: "json", limit: 10 }`
+  - `args: { query: "design", format: "json", limit: 10 }`
 
 ### Read / browse
 
 - `read` — read a note body.
   - `args: { file: "My Note" }` resolves by name (wikilink-style, alias-aware) — preferred.
   - `args: { path: "folder/note.md" }` is exact.
-- `files` — list files (`args: { folder: "hermes", ext: "md", total: true }`).
-- `folders` — list folders (`args: { folder: "hermes" }`).
+- `files` — list files (`args: { folder: "projects", ext: "md", total: true }`).
+- `folders` — list folders (`args: { folder: "projects" }`).
 - `outline` — heading tree of one note (`args: { path: "folder/note.md", format: "md" }`; formats: tree|md|json).
 - `tags` — all tags (`args: { counts: true, sort: "count", format: "json" }`; `file:` to scope to one note).
 - `properties` — all frontmatter keys (`args: { counts: true, sort: "count", format: "json" }`).
@@ -51,8 +51,8 @@ The `obsidian` tool takes:
 
 ### Write / edit
 
-- `create` — new note (`args: { name: "Title", path: "folder/title.md", content: "...", open: true }`; `overwrite: true` to replace; `template: "name"` to apply a template).
-- `append` / `prepend` — add to existing (`args: { file: "My Note", content: "..." }`; `inline: true` skips the trailing newline).
+- `create` — new note (`args: { name: "Title", path: "folder/title.md", content: "...", open: true }`; `overwrite: true` to replace; `template: "name"` to apply a template). There is **no `write` CLI command** — to overwrite an existing note use `create` with `overwrite: true`. (The tool also accepts `write` as an alias that maps to `create` + `overwrite`.)
+- `append` / `prepend` — add to existing (`args: { path: "folder/note.md", content: "..." }`; `inline: true` skips the trailing newline). **The tool requires an explicit `path` or `file`** — without one the CLI targets whatever note is currently active in the app, which is often the wrong note.
 - `property:set` — set frontmatter (`args: { name: "status", value: "done", type: "text", file: "My Note" }`; type: text|list|number|checkbox|date|datetime).
 - `property:remove` — remove a frontmatter key.
 - `move` — move/rename (`args: { path: "old.md", to: "new-folder/" }`).
@@ -81,19 +81,20 @@ The `obsidian` tool takes:
 
 - **Do NOT use the MCP gateway** — there is no MCP server for obsidian. Always use the `obsidian` tool (or `bash` with `obsidian ...`).
 - The CLI only works when the Obsidian app is **running** and the CLI is **enabled**. If the tool returns "Command line interface is not enabled", tell the user to enable it (Settings > General > Advanced) and restart the app — then fall back to `rg` over the vault folder. Do NOT retry the CLI in a loop.
-- Only `flat` is a registered vault. `hermes`, `Lx`, `work` are **folders** inside it — target them with `args.path: "hermes/..."`, NOT `vault: "hermes"`.
 - `file` resolves by name (wikilink/alias aware) and may match **multiple** notes — check the output for ambiguity. `path` is exact. For write operations (property:set, delete, move) always use the exact `path` from a prior search to avoid acting on the wrong note.
 - Search defaults to `text` format which is hard to parse; always pass `format: "json"` for structured results, or use `search:context` when you need to see the matching line.
 - `delete permanent` is refused by the tool. Use default `delete` (recoverable) or run via `bash` with explicit user confirmation.
 - `search` returns filenames; to read the matched note you need a second `read` call with the returned path/name.
+- **Never construct note paths by hand** (from a directory name, a note title, or a guess) — paths are real kebab-case filenames that usually do NOT match the note title. Always `search` first (with `format: "json"`), then pass a returned path **verbatim** to `read`/`append`/`property:set`. Guessed paths fail with `File not found`.
+- The CLI reports some failures (e.g. `read` on a missing file) on stdout **with exit code 0** — do not treat a clean exit code as proof of success; check the output text for `Error:`.
 
 ## Fallback (CLI down or app not running)
 
-The vault is a plain markdown folder, so `rg` works directly. Vault root: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/flat/`. Wikilinks look like `[[Note Name]]` or `[[Note Name|alias]]`; frontmatter is YAML between `---` fences. This gives text search + read but **not** graph traversal (backlinks/links/orphans) — for those, the CLI must be alive.
+The vault is a plain markdown folder, so `rg` works directly. The vault filesystem path is shown in the Obsidian app settings (or via `vault` with `info: "path"` once the CLI is back). Wikilinks look like `[[Note Name]]` or `[[Note Name|alias]]`; frontmatter is YAML between `---` fences. This gives text search + read but **not** graph traversal (backlinks/links/orphans) — for those, the CLI must be alive.
 
 ## Verification
 
-1. `obsidian` tool with `command: "vaults", args: { verbose: true }` exits 0 and lists the `flat` vault.
-2. A known search returns hits: `command: "search", args: { query: "Mistral", vault: "flat", limit: 3, format: "json" }`.
-3. `command: "read", args: { file: "<name>", vault: "flat" }` returns the note body for a name returned by search.
+1. `obsidian` tool with `command: "vaults", args: { verbose: true }` exits 0 and lists the registered vault(s).
+2. A known search returns hits: `command: "search", args: { query: "<topic>", limit: 3, format: "json" }`.
+3. `command: "read", args: { path: "<path returned by search>" }` returns the note body.
 4. For write ops, re-read the note with `command: "read", args: { path: "<path>" }` to confirm the change landed before reporting success.

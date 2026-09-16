@@ -35,9 +35,9 @@ describe("buildArgv", () => {
 	test("string args become key=value tokens", () => {
 		const argv = buildArgv({
 			command: "search",
-			args: { query: "mistral", format: "json", limit: 10 },
+			args: { query: "design", format: "json", limit: 10 },
 		});
-		expect(argv).toEqual(["search", "query=mistral", "format=json", "limit=10"]);
+		expect(argv).toEqual(["search", "query=design", "format=json", "limit=10"]);
 	});
 
 	test("boolean true becomes a bare flag", () => {
@@ -71,9 +71,9 @@ describe("buildArgv", () => {
 		const argv = buildArgv({
 			command: "search",
 			args: { query: "x" },
-			vault: "flat",
+			vault: "myvault",
 		});
-		expect(argv).toEqual(["search", "query=x", "vault=flat"]);
+		expect(argv).toEqual(["search", "query=x", "vault=myvault"]);
 	});
 
 	test("null and undefined args values are skipped", () => {
@@ -101,6 +101,111 @@ describe("assertSafeCommand", () => {
 	});
 });
 
+describe("buildArgv — write alias", () => {
+	test("write maps to create with overwrite", () => {
+		expect(buildArgv({ command: "write", args: { path: "notes/a.md", content: "x" } })).toEqual([
+			"create",
+			"path=notes/a.md",
+			"content=x",
+			"overwrite",
+		]);
+	});
+
+	test("write with string 'false' overwrite opts out (plain create)", () => {
+		expect(buildArgv({ command: "write", args: { path: "a.md", overwrite: "false" } })).toEqual([
+			"create",
+			"path=a.md",
+		]);
+	});
+
+	test("write with numeric 0 overwrite opts out (plain create)", () => {
+		expect(buildArgv({ command: "write", args: { path: "a.md", overwrite: 0 } })).toEqual([
+			"create",
+			"path=a.md",
+		]);
+	});
+
+	test("write with overwrite:false opts out (plain create)", () => {
+		expect(buildArgv({ command: "write", args: { path: "notes/a.md", overwrite: false } })).toEqual([
+			"create",
+			"path=notes/a.md",
+		]);
+	});
+
+	test("write does not clobber a caller-supplied overwrite:true", () => {
+		expect(buildArgv({ command: "write", args: { path: "a.md", overwrite: true } })).toEqual([
+			"create",
+			"path=a.md",
+			"overwrite",
+		]);
+	});
+
+	test("vault flag survives the write alias", () => {
+		expect(buildArgv({ command: "write", args: { path: "a.md" }, vault: "myvault" })).toEqual([
+			"create",
+			"path=a.md",
+			"overwrite",
+			"vault=myvault",
+		]);
+	});
+});
+
+describe("assertSafeCommand — append/prepend targeting", () => {
+	test("append without path/file is refused", () => {
+		expect(() => assertSafeCommand({ command: "append", args: { content: "x" } })).toThrow(
+			/path|file/,
+		);
+	});
+
+	test("prepend without path/file is refused", () => {
+		expect(() => assertSafeCommand({ command: "prepend", args: { content: "x" } })).toThrow(
+			/path|file/,
+		);
+	});
+
+	test("append with empty-string path is refused", () => {
+		expect(() => assertSafeCommand({ command: "append", args: { path: "", content: "x" } })).toThrow(
+			/non-blank|path.*file/,
+		);
+	});
+
+	test("append with whitespace-only path is refused", () => {
+		expect(() => assertSafeCommand({ command: "append", args: { path: "   ", content: "x" } })).toThrow(
+			/non-blank/,
+		);
+	});
+
+	test("prepend with whitespace-only file is refused", () => {
+		expect(() => assertSafeCommand({ command: "prepend", args: { file: "  \t", content: "x" } })).toThrow(
+			/non-blank/,
+		);
+	});
+
+	test("append with path is allowed", () => {
+		expect(() => assertSafeCommand({ command: "append", args: { path: "n.md", content: "x" } })).not.toThrow();
+	});
+
+	test("append with file is allowed", () => {
+		expect(() => assertSafeCommand({ command: "append", args: { file: "My Note", content: "x" } })).not.toThrow();
+	});
+
+	test("daily:append is exempt (targets the daily note by design)", () => {
+		expect(() => assertSafeCommand({ command: "daily:append", args: { content: "x" } })).not.toThrow();
+	});
+
+	test("daily:prepend is exempt (targets the daily note by design)", () => {
+		expect(() => assertSafeCommand({ command: "daily:prepend", args: { content: "x" } })).not.toThrow();
+	});
+
+	test("prepend with path is allowed", () => {
+		expect(() => assertSafeCommand({ command: "prepend", args: { path: "n.md", content: "x" } })).not.toThrow();
+	});
+
+	test("prepend with file is allowed", () => {
+		expect(() => assertSafeCommand({ command: "prepend", args: { file: "My Note", content: "x" } })).not.toThrow();
+	});
+});
+
 describe("formatOutput", () => {
 	test("stdout only", () => {
 		expect(formatOutput("hello", "")).toBe("hello");
@@ -123,11 +228,73 @@ describe("runObsidian", () => {
 	test("builds argv from params and passes it to exec", async () => {
 		const exec = makeFakeExec({ stdout: '["note.md"]', code: 0 });
 		await runObsidian(
-			{ command: "search", args: { query: "mistral", format: "json", limit: 3 } },
+			{ command: "search", args: { query: "design", format: "json", limit: 3 } },
 			exec,
 		);
 		expect(exec.calls[0][0]).toBe("obsidian");
-		expect(exec.calls[0][1]).toEqual(["search", "query=mistral", "format=json", "limit=3"]);
+		expect(exec.calls[0][1]).toEqual(["search", "query=design", "format=json", "limit=3"]);
+	});
+
+	test("write alias execs create with overwrite", async () => {
+		const exec = makeFakeExec({ stdout: "Overwrote: notes/a.md", code: 0 });
+		const res = await runObsidian({ command: "write", args: { path: "notes/a.md", content: "x" } }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["create", "path=notes/a.md", "content=x", "overwrite"]);
+	});
+
+	test("append without path/file is refused before exec is called", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(runObsidian({ command: "append", args: { content: "x" } }, exec)).rejects.toThrow(
+			/path|file/,
+		);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("write with overwrite:false execs a plain create", async () => {
+		const exec = makeFakeExec({ stdout: "Created: notes/a.md", code: 0 });
+		const res = await runObsidian({ command: "write", args: { path: "notes/a.md", content: "x", overwrite: false } }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["create", "path=notes/a.md", "content=x"]);
+	});
+
+	test("CLI error on stdout with exit code 0 is still flagged as error", async () => {
+		const exec = makeFakeExec({
+			stdout: "Error: File notes/missing.md not found.",
+			code: 0,
+		});
+		const res = await runObsidian({ command: "read", args: { path: "notes/missing.md" } }, exec);
+		expect(res.isError).toBe(true);
+		expect(res.details).toMatchObject({ cliErrorDetected: true });
+	});
+
+	test("note body containing a mid-body 'Error:' line stays a success", async () => {
+		const noteBody = "# Incident log\n\nSome prose about debugging.\nError: connection reset by peer\nMore prose follows.";
+		const exec = makeFakeExec({ stdout: noteBody, code: 0 });
+		const res = await runObsidian({ command: "read", args: { path: "notes/incidents.md" } }, exec);
+		expect(res.isError).toBe(false);
+		expect(res.details.cliErrorDetected).toBeUndefined();
+	});
+
+	test("note body containing 'File ... not found' prose stays a success", async () => {
+		const noteBody = "A troubleshooting note: if you see `File xyz.md not found.` in the logs, try again.";
+		const exec = makeFakeExec({ stdout: noteBody, code: 0 });
+		const res = await runObsidian({ command: "read", args: { path: "notes/troubleshooting.md" } }, exec);
+		expect(res.isError).toBe(false);
+		expect(res.details.cliErrorDetected).toBeUndefined();
+	});
+
+	test("CLI error on first line only is flagged", async () => {
+		const exec = makeFakeExec({ stdout: "Error: Missing required parameter: query=text", code: 0 });
+		const res = await runObsidian({ command: "search", args: { format: "json" } }, exec);
+		expect(res.isError).toBe(true);
+		expect(res.details).toMatchObject({ cliErrorDetected: true });
+	});
+
+	test("plain stdout without CLI error stays a success at exit code 0", async () => {
+		const exec = makeFakeExec({ stdout: "[{\"path\":\"a.md\"}]", code: 0 });
+		const res = await runObsidian({ command: "search", args: { query: "a" } }, exec);
+		expect(res.isError).toBe(false);
+		expect(res.details.cliErrorDetected).toBeUndefined();
 	});
 
 	test("success result echoes command, exit code, and output", async () => {
@@ -158,6 +325,17 @@ describe("runObsidian", () => {
 		expect(res.details).toMatchObject({ cliNotEnabled: true });
 		expect(res.content[0].text).toContain("CLI is not enabled");
 		expect(res.content[0].text).toContain("Settings > General > Advanced");
+	});
+
+	test("CLI-not-enabled failure on stderr is also detected", async () => {
+		const exec = makeFakeExec({
+			stdout: "",
+			stderr: "Error: The Obsidian command line interface is not enabled",
+			code: 1,
+		});
+		const res = await runObsidian({ command: "vaults" }, exec);
+		expect(res.isError).toBe(true);
+		expect(res.details).toMatchObject({ cliNotEnabled: true });
 	});
 
 	test("delete permanent is refused before exec is called", async () => {

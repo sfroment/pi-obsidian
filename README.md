@@ -23,7 +23,7 @@ Pi can already shell out to the `obsidian` CLI via `bash`, but a bare skill desc
 - an **`args` map** that serializes to the CLI's `key=value` token format (booleans → bare flags, no shell quoting needed)
 - **prompt guidance** injected when a prompt mentions obsidian / vault / notes
 - a **bundled skill** documenting every command
-- **safety guards** — refuses `delete permanent`, detects "CLI not enabled" and returns actionable fallback guidance
+- **safety guards** — refuses `delete permanent`, requires explicit `path`/`file` targeting for `append`/`prepend` (a missing target silently appends to whatever note is active in the app), accepts `write` as a safe `create`+`overwrite` alias, and flags CLI errors printed on stdout with exit code 0
 - **output truncation** consistent with Pi's built-in tools
 
 ## Requirements
@@ -74,7 +74,7 @@ The `obsidian` tool takes:
 
 ```jsonc
 // search notes
-{ "command": "search", "args": { "query": "mistral", "format": "json", "limit": 10 } }
+{ "command": "search", "args": { "query": "design", "format": "json", "limit": 10 } }
 
 // read a note (wikilink-style name resolution)
 { "command": "read", "args": { "file": "My Note" } }

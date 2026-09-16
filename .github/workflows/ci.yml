@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bun: ["1.3"]
+        bun: ["1.4"]
     steps:
       - uses: actions/checkout@v7
 
