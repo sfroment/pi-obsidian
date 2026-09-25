@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Param normalization: `args` as stringified JSON or `key=value` text, a nested `{args: {command: '...', ...}}` call shape, `property:set` with a `properties` object, and an `edit` command (`content` → `write`, `old_string`/`new_string` → teaching error) are now coerced instead of failing schema validation.
+
 ### Added
 - `write` command alias: maps to `create` with `overwrite` (the CLI has no `write` command).
 - `append`/`prepend` safety guard: requires an explicit non-blank `path` or `file` — without one the CLI silently targets whatever note is active in the app.
