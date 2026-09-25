@@ -87,6 +87,10 @@ const COMMANDS = [
 	"restart",
 	// tool-level alias (not a CLI command): `write` → `create` + `overwrite`
 	"write",
+	// tool-level alias: `edit` → `write` when a full `content` is given (the
+	// CLI has no find-and-replace; normalizeObsidianParams teaches the
+	// read-then-write path for old_string/new_string calls)
+	"edit",
 ] as const;
 
 type ObsidianCommand = (typeof COMMANDS)[number];
@@ -128,6 +132,113 @@ export type ObsidianParams = {
 	vault?: string;
 	timeoutSeconds?: number;
 };
+
+/**
+ * Raw, permissive params as the model may pass them. Models serialise `args`
+ * to a JSON string (or `key=value` text) and nest `command` inside `args`;
+ * the tool schema accepts these shapes and normalizeObsidianParams coerces
+ * them to the canonical ObsidianParams before execution.
+ */
+export type RawObsidianParams = {
+	command?: string;
+	args?: Record<string, string | number | boolean | Record<string, string | number | boolean>> | string;
+	vault?: string;
+	timeoutSeconds?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, string | number | boolean> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function normalizeObsidianParams(raw: RawObsidianParams): ObsidianParams {
+	// Coerce string args to a record first (JSON or key=value text).
+	const rawArgs: Record<string, string | number | boolean | Record<string, string | number | boolean>> =
+		typeof raw.args === "string" ? parseArgsText(raw.args) : { ...(raw.args ?? {}) };
+
+	// Models nest the whole call inside `args` (`{args: {command: 'create', args: {...}}}`);
+	// hoist the command when the top-level one is missing.
+	let command = raw.command;
+	if (command === undefined && rawArgs.command !== undefined) {
+		const nested = rawArgs.command;
+		if (typeof nested !== "string" || !(COMMANDS as readonly string[]).includes(nested)) {
+			throw new Error(
+				`Unknown command "${String(nested)}" nested inside args. ` +
+					"Pass command as a top-level parameter (e.g. command: 'search'), not inside args.",
+			);
+		}
+		command = nested;
+		delete rawArgs.command;
+	}
+	// An empty/missing command falls through to runObsidian's teaching error.
+
+	// A nested `args` record carries the actual flags; merge it over the rest.
+	if (isRecord(rawArgs.args)) {
+		const nestedArgs = rawArgs.args;
+		delete rawArgs.args;
+		Object.assign(rawArgs, nestedArgs);
+	}
+
+	const args: Record<string, string | number | boolean> = {};
+	for (const [key, value] of Object.entries(rawArgs)) {
+		if (isRecord(value)) {
+			// Object-valued flags (e.g. property:set's {properties: {...}}) carry
+			// the actual flags — spread them as siblings.
+			Object.assign(args, value);
+			continue;
+		}
+		args[key] = value;
+	}
+
+	// `edit` is a tool-level alias: the CLI has no find-and-replace. With
+	// `content` it means "replace the note" → write (create + overwrite); with
+	// old/new_string there is no local substitute — teach the read-then-write path.
+	if (command === "edit") {
+		if (args.content !== undefined) {
+			command = "write";
+		} else {
+			throw new Error(
+				"The obsidian CLI has no find-and-replace `edit`. To change part of a note: `read` it, " +
+					"then `write` the full new content (write = create + overwrite). For insertions use `append`/" +
+					"`prepend` with an explicit `path` or `file`.",
+			);
+		}
+	}
+
+	const params: ObsidianParams = { command: (command ?? "") as ObsidianCommand };
+	if (Object.keys(args).length > 0) params.args = args;
+	if (raw.vault !== undefined) params.vault = raw.vault;
+	if (raw.timeoutSeconds !== undefined) params.timeoutSeconds = raw.timeoutSeconds;
+	return params;
+}
+
+/**
+ * Parse model-supplied `args` text into a record. Stringified JSON wins when
+ * it parses; otherwise the text is treated as `key=value` tokens separated by
+ * whitespace: a token with `=` starts a new key, plain tokens continue the
+ * previous value (space-joined) so multi-word values survive, and a bare
+ * leading token becomes a boolean flag.
+ */
+function parseArgsText(text: string): Record<string, string | number | boolean> {
+	try {
+		return JSON.parse(text) as Record<string, string | number | boolean>;
+	} catch {
+		// fall through to key=value token parsing
+	}
+	const args: Record<string, string | number | boolean> = {};
+	let currentKey: string | undefined;
+	for (const token of text.split(/\s+/).filter(Boolean)) {
+		const eq = token.indexOf("=");
+		if (eq > 0) {
+			currentKey = token.slice(0, eq);
+			args[currentKey] = token.slice(eq + 1);
+		} else if (currentKey !== undefined) {
+			args[currentKey] = `${args[currentKey]} ${token}`;
+		} else {
+			args[token] = true;
+		}
+	}
+	return args;
+}
 
 /**
  * Serialize the args map into the obsidian CLI's `key=value` token format.
@@ -228,7 +339,7 @@ export type ObsidianExec = (
  * as a Pi tool result.
  */
 export async function runObsidian(
-	params: ObsidianParams,
+	params: RawObsidianParams,
 	exec: ObsidianExec,
 	signal?: AbortSignal,
 ): Promise<{
@@ -236,13 +347,14 @@ export async function runObsidian(
 	details: Record<string, unknown>;
 	isError: boolean;
 }> {
-	if (!params.command) {
+	const normalized = normalizeObsidianParams(params);
+	if (!normalized.command) {
 		throw new Error("Pass an obsidian command, for example `command: 'vaults'` or `command: 'search'`.");
 	}
-	assertSafeCommand(params);
+	assertSafeCommand(normalized);
 
-	const argv = buildArgv(params);
-	const timeoutSeconds = Math.min(Math.max(params.timeoutSeconds ?? 30, 1), 120);
+	const argv = buildArgv(normalized);
+	const timeoutSeconds = Math.min(Math.max(normalized.timeoutSeconds ?? 30, 1), 120);
 
 	let result: ExecResult;
 	try {
@@ -270,7 +382,7 @@ export async function runObsidian(
 						"That gives text search + read, but not graph features (backlinks, links, orphans).",
 				},
 			],
-			details: { command: params.command, code, cliNotEnabled: true },
+			details: { command: normalized.command, code, cliNotEnabled: true },
 			isError: true,
 		};
 	}
@@ -296,7 +408,7 @@ export async function runObsidian(
 	return {
 		content: [{ type: "text", text }],
 		details: {
-			command: params.command,
+			command: normalized.command,
 			argv,
 			code,
 			killed: result.killed,
@@ -340,15 +452,31 @@ export default function obsidianExtension(pi: ExtensionAPI) {
 			"If the tool reports the CLI is not enabled, tell the user to enable it in Obsidian Settings > General > Advanced and restart the app, then fall back to `rg` over the vault folder.",
 		],
 		parameters: Type.Object({
-			command: StringEnum(COMMANDS, {
-				description:
-					"Obsidian CLI command to run. Common: search, search:context, read, files, folders, outline, tags, properties, property:read, property:set, backlinks, links, orphans, deadends, unresolved, create, append, prepend, move, rename, delete, daily:read, daily:append, tasks, vaults, vault. `write` is an alias for `create` with `overwrite: true` (pass `overwrite: false` to opt out). Run `obsidian help <command>` via bash for full flag reference.",
-			}),
-			args: Type.Optional(
-				Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()]), {
+			command: Type.Optional(
+				StringEnum(COMMANDS, {
 					description:
-						"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'design', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values.",
+						"Obsidian CLI command to run. Common: search, search:context, read, files, folders, outline, tags, properties, property:read, property:set, backlinks, links, orphans, deadends, unresolved, create, append, prepend, move, rename, delete, daily:read, daily:append, tasks, vaults, vault. `write` is an alias for `create` with `overwrite: true` (pass `overwrite: false` to opt out); `edit` with `content` behaves like `write` (find-and-replace via old_string/new_string is not supported). Run `obsidian help <command>` via bash for full flag reference.",
 				}),
+			),
+			args: Type.Optional(
+				Type.Union(
+					[
+						Type.Record(
+							Type.String(),
+							Type.Union([
+								Type.String(),
+								Type.Number(),
+								Type.Boolean(),
+								Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
+							]),
+						),
+						Type.String(),
+					],
+					{
+						description:
+							"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'design', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values. Tolerated and normalized: a stringified-JSON or `key=value` text string, object-valued flags (e.g. `properties` for `property:set`), and a nested `{args: {command: '...', ...flags}}` call shape.",
+					},
+				),
 			),
 			vault: Type.Optional(
 				Type.String({

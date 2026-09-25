@@ -6,6 +6,7 @@ import {
 	assertSafeCommand,
 	buildArgv,
 	formatOutput,
+	normalizeObsidianParams,
 	runObsidian,
 	type ExecResult,
 	type ObsidianExec,
@@ -26,6 +27,83 @@ function makeFakeExec(result: ExecResult): ObsidianExec & { calls: Parameters<Ob
 	fn.calls = calls;
 	return fn;
 }
+
+describe("normalizeObsidianParams", () => {
+	test("args passed as a JSON object string is parsed to a record", () => {
+		const params = normalizeObsidianParams({
+			command: "search",
+			args: '{"query":"design","format":"json","limit":3}',
+		});
+		expect(params).toEqual({
+			command: "search",
+			args: { query: "design", format: "json", limit: 3 },
+		});
+	});
+
+	test("args passed as key=value text is parsed to a record", () => {
+		const params = normalizeObsidianParams({
+			command: "search",
+			args: "query=my design format=json",
+		});
+		expect(params).toEqual({
+			command: "search",
+			args: { query: "my design", format: "json" },
+		});
+	});
+
+	test("a bare leading token in key=value text becomes a boolean flag", () => {
+		const params = normalizeObsidianParams({
+			command: "vaults",
+			args: "verbose",
+		});
+		expect(params).toEqual({ command: "vaults", args: { verbose: true } });
+	});
+
+	test("command nested inside args is hoisted to top level", () => {
+		const params = normalizeObsidianParams({
+			args: { command: "create", args: { path: "notes/a.md", content: "x" } },
+		});
+		expect(params).toEqual({ command: "create", args: { path: "notes/a.md", content: "x" } });
+	});
+
+	test("flags inline next to a nested command are kept as args", () => {
+		const params = normalizeObsidianParams({
+			args: { command: "create", path: "notes/a.md", content: "x" },
+		});
+		expect(params).toEqual({ command: "create", args: { path: "notes/a.md", content: "x" } });
+	});
+
+	test("an unknown nested command value throws a clear error", () => {
+		expect(() => normalizeObsidianParams({ args: { command: "explode", path: "a.md" } })).toThrow(
+			/unknown command "explode"/i,
+		);
+	});
+
+	test("property:set flattens a properties object into sibling args", () => {
+		const params = normalizeObsidianParams({
+			command: "property:set",
+			args: { file: "KOYEB-6290", properties: { assignee: "[[Sacha]]", issue: "KOYEB-6290" } },
+		});
+		expect(params).toEqual({
+			command: "property:set",
+			args: { file: "KOYEB-6290", assignee: "[[Sacha]]", issue: "KOYEB-6290" },
+		});
+	});
+
+	test("edit with content maps to the write alias", () => {
+		const params = normalizeObsidianParams({
+			command: "edit",
+			args: { file: "notes/a.md", content: "new body" },
+		});
+		expect(params).toEqual({ command: "write", args: { file: "notes/a.md", content: "new body" } });
+	});
+
+	test("edit with old_string/new_string and no content throws guidance toward write", () => {
+		expect(() =>
+			normalizeObsidianParams({ command: "edit", args: { file: "n.md", old_string: "a", new_string: "b" } }),
+		).toThrow(/read.*write|write/i);
+	});
+});
 
 describe("buildArgv", () => {
 	test("command alone produces single-element argv", () => {
@@ -370,6 +448,27 @@ describe("runObsidian", () => {
 		const exec = makeFakeExec({ stdout: "ok", code: 0 });
 		await runObsidian({ command: "vaults", timeoutSeconds: 9999 }, exec);
 		expect(exec.calls[0][2].timeout).toBe(120 * 1000);
+	});
+
+	test("string args are coerced at the runObsidian boundary", async () => {
+		const exec = makeFakeExec({ stdout: "[]", code: 0 });
+		const res = await runObsidian({ command: "search", args: '{"query":"design","format":"json"}' }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["search", "query=design", "format=json"]);
+	});
+
+	test("nested command+args form is coerced at the runObsidian boundary", async () => {
+		const exec = makeFakeExec({ stdout: "Created: a.md", code: 0 });
+		const res = await runObsidian({ args: { command: "create", args: { path: "a.md", content: "x" } } }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["create", "path=a.md", "content=x"]);
+	});
+
+	test("edit with content execs create with overwrite through runObsidian", async () => {
+		const exec = makeFakeExec({ stdout: "Overwrote: a.md", code: 0 });
+		const res = await runObsidian({ command: "edit", args: { file: "a.md", content: "new" } }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["create", "file=a.md", "content=new", "overwrite"]);
 	});
 
 	test("timeout defaults to 30s", async () => {
