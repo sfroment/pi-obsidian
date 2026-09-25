@@ -82,11 +82,11 @@ describe("normalizeObsidianParams", () => {
 	test("property:set flattens a properties object into sibling args", () => {
 		const params = normalizeObsidianParams({
 			command: "property:set",
-			args: { file: "KOYEB-6290", properties: { assignee: "[[Sacha]]", issue: "KOYEB-6290" } },
+			args: { file: "note-123", properties: { assignee: "[[Author]]", issue: "note-123" } },
 		});
 		expect(params).toEqual({
 			command: "property:set",
-			args: { file: "KOYEB-6290", assignee: "[[Sacha]]", issue: "KOYEB-6290" },
+			args: { file: "note-123", assignee: "[[Author]]", issue: "note-123" },
 		});
 	});
 
