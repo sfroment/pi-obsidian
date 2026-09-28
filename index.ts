@@ -452,12 +452,10 @@ export default function obsidianExtension(pi: ExtensionAPI) {
 			"If the tool reports the CLI is not enabled, tell the user to enable it in Obsidian Settings > General > Advanced and restart the app, then fall back to `rg` over the vault folder.",
 		],
 		parameters: Type.Object({
-			command: Type.Optional(
-				StringEnum(COMMANDS, {
+			command: StringEnum(COMMANDS, {
 					description:
 						"Obsidian CLI command to run. Common: search, search:context, read, files, folders, outline, tags, properties, property:read, property:set, backlinks, links, orphans, deadends, unresolved, create, append, prepend, move, rename, delete, daily:read, daily:append, tasks, vaults, vault. `write` is an alias for `create` with `overwrite: true` (pass `overwrite: false` to opt out); `edit` with `content` behaves like `write` (find-and-replace via old_string/new_string is not supported). Run `obsidian help <command>` via bash for full flag reference.",
-				}),
-			),
+			}),
 			args: Type.Optional(
 				Type.Union(
 					[
@@ -474,7 +472,7 @@ export default function obsidianExtension(pi: ExtensionAPI) {
 					],
 					{
 						description:
-							"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'design', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values. Tolerated and normalized: a stringified-JSON or `key=value` text string, object-valued flags (e.g. `properties` for `property:set`), and a nested `{args: {command: '...', ...flags}}` call shape.",
+							"Command flags as a key/value map. Booleans become bare flags (e.g. `{counts: true}` → `counts`). Strings become `key=value` tokens (e.g. `{query: 'design', format: 'json', limit: 10}`). Use `file` for wikilink-style name resolution, `path` for exact paths, `vault` is handled separately. Use `\\n` for newlines and `\\t` for tabs inside `content` values. Tolerated and normalized: a stringified-JSON or `key=value` text string, object-valued flags (e.g. `properties` for `property:set`).",
 					},
 				),
 			),
